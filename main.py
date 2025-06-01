@@ -9,11 +9,25 @@ from config import SUBSET_EVAL_SIZE, MAX_WIKIPEDIA_PAGES_PER_QUESTION, WIKIPEDIA
                    SENTENCE_TRANSFORMER_MODEL, QA_MODEL_NAME, SPACY_MODEL_NAME, \
                    SENTENCE_TRANSFORMER_MODEL_PATH, QA_MODEL_PATH # Added for pre-downloading in main
 import os
-import torch
+# import torch # torch is imported by specific modules if/when needed, not directly used in main.py's top level
 from transformers import AutoTokenizer, AutoModel, AutoModelForQuestionAnswering # Added for pre-downloading
+import spacy # For SpaCy model download check
 
 def pre_download_all_models():
-    """Ensures all necessary models are downloaded locally."""
+    """
+    Ensures all necessary Hugging Face Transformer models and SpaCy language models
+    are downloaded and cached locally.
+
+    This function attempts to download:
+    - Sentence Transformer model (for retriever and answer selector).
+    - Question Answering (QA) model (for reader).
+    - SpaCy language model (for preprocessing).
+
+    Models are saved to paths defined in `config.py`.
+    Errors during download are caught and reported, allowing the script to
+    potentially continue if some models are already present or if manual
+    download is preferred.
+    """
     print("Ensuring all models are pre-downloaded...")
     
     # Sentence Transformer
@@ -49,6 +63,25 @@ def pre_download_all_models():
 
 
 def main():
+    """
+    Main function to run the Medical Question Answering System.
+
+    Orchestrates the entire pipeline:
+    1. Parses command-line arguments for evaluation mode (full/subset) and
+       optional Wikipedia title index building.
+    2. Ensures necessary directories and models are set up/downloaded.
+    3. Initializes the Retriever, Reader, AnswerSelector, and Evaluator components.
+    4. Loads the MedQA dataset.
+    5. Iterates through questions, performing retrieval, reading, and answer selection.
+    6. Handles errors gracefully at each stage for each question, allowing the
+       pipeline to continue with the next question.
+    7. Evaluates the system's performance (accuracy) and prints the results.
+
+    Command-line arguments:
+        --subset_eval: Evaluate on a smaller subset of questions for quick testing.
+        --build_title_index: Build a FAISS index of Wikipedia titles (optional,
+                             requires internet for initial data fetching).
+    """
     parser = argparse.ArgumentParser(description="Medical Question Answering System")
     parser.add_argument("--subset_eval", action="store_true",
                         help=f"Evaluate on a subset of {SUBSET_EVAL_SIZE} questions instead of all.") 

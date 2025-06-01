@@ -3,20 +3,44 @@ import os
 import random
 import numpy as np
 import torch
-import config
+# import config # config is not used directly for RANDOM_SEED anymore
 
-def setup_logging(level=logging.INFO):
-    """Sets up basic logging."""
-    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+def setup_logging(level: int = logging.INFO):
+    """
+    Sets up basic logging for the application.
+
+    Args:
+        level (int, optional): The logging level (e.g., logging.INFO, logging.DEBUG).
+                               Defaults to logging.INFO.
+    """
+    logging.basicConfig(level=level,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S')
 
 def ensure_dir(directory_path: str):
-    """Ensures that a directory exists, creating it if necessary."""
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-        logging.info(f"Created directory: {directory_path}")
+    """
+    Ensures that a directory exists at the specified path.
+    If the directory (or any parent directory) does not exist, it is created.
 
-def set_seed(seed: int = config.RANDOM_SEED):
-    """Sets random seed for reproducibility."""
+    Args:
+        directory_path (str): The path to the directory.
+    """
+    if not os.path.exists(directory_path):
+        try:
+            os.makedirs(directory_path)
+            logging.info(f"Created directory: {directory_path}")
+        except OSError as e:
+            logging.error(f"Error creating directory {directory_path}: {e}")
+            # Depending on severity, might re-raise or handle differently
+            raise # Re-raise the exception if directory creation is critical
+
+def set_seed(seed: int = 42):
+    """
+    Sets random seeds for Python's `random`, NumPy, and PyTorch to ensure reproducibility.
+
+    Args:
+        seed (int, optional): The seed value to use. Defaults to 42.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
