@@ -232,11 +232,11 @@ class WikipediaRetriever:
             self.wiki_title_metadata = json.load(open(WIKIPEDIA_TITLE_METADATA_PATH, 'r', encoding='utf-8'))
             print("Wikipedia title index loaded.")
             return True
-    except FileNotFoundError:
-        print(f"Wikipedia title index not found at {WIKIPEDIA_TITLE_INDEX_PATH} or {WIKIPEDIA_TITLE_METADATA_PATH}. Please build it first or check paths.")
-        return False
-    except json.JSONDecodeError as e:
-        print(f"Error decoding JSON for Wikipedia title metadata from {WIKIPEDIA_TITLE_METADATA_PATH}: {e}")
+        except FileNotFoundError:
+            print(f"Wikipedia title index not found at {WIKIPEDIA_TITLE_INDEX_PATH} or {WIKIPEDIA_TITLE_METADATA_PATH}. Please build it first or check paths.")
+            return False
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON for Wikipedia title metadata from {WIKIPEDIA_TITLE_METADATA_PATH}: {e}")
             return False
         except Exception as e:
         print(f"An unexpected error occurred while loading Wikipedia title index: {e}")
