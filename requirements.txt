@@ -1,0 +1,14 @@
+datasets
+transformers
+torch 
+scikit-learn
+nltk
+spacy
+# After installing spacy, download a model: python -m spacy download en_core_web_md
+fuzzywuzzy
+python-Levenshtein
+faiss-cpu # or faiss-gpu if you have a CUDA-enabled FAISS build and environment
+rank_bm25
+wikipedia
+requests # Often a dependency for other libraries or for direct API calls
+tqdm # For progress bars, very useful for long processes
