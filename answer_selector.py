@@ -6,35 +6,103 @@ from config import SENTENCE_TRANSFORMER_MODEL, SENTENCE_TRANSFORMER_MODEL_PATH, 
 
 class AnswerSelector:
     def __init__(self):
+        """
+        Initializes the AnswerSelector.
+
+        Loads the Sentence Transformer model used for calculating semantic similarity
+        between candidate answers and multiple-choice options.
+        Errors during model download/loading from Hugging Face Hub may cause
+        program termination.
+        """
         # Load Sentence Transformer for semantic similarity
         print(f"Loading Sentence Transformer for AnswerSelector to {DEVICE}...")
         self.tokenizer_st = AutoTokenizer.from_pretrained(SENTENCE_TRANSFORMER_MODEL_PATH)
         self.model_st = AutoModel.from_pretrained(SENTENCE_TRANSFORMER_MODEL_PATH).to(DEVICE) 
         self.model_st.eval()
+        # Determine embedding dimension for handling empty text cases
+        try:
+            # Encode a dummy text to find the embedding dimension
+            dummy_embedding = self.get_embedding_st("test")
+            self.embedding_dim = dummy_embedding.shape[0]
+        except Exception as e:
+            print(f"Warning: Could not determine embedding dimension during AnswerSelector init: {e}")
+            # Fallback to a common dimension for MiniLM or allow it to fail later if ST model truly failed
+            self.embedding_dim = 384 # Common for all-MiniLM-L6-v2
 
-    def _mean_pooling(self, model_output, attention_mask):
-        token_embeddings = model_output[0]
+    def _mean_pooling(self, model_output: tuple, attention_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Performs mean pooling on token embeddings to get sentence embeddings.
+        (Helper function for Sentence Transformer).
+
+        Args:
+            model_output (tuple): Output from the Hugging Face model.
+            attention_mask (torch.Tensor): Attention mask for the input tokens.
+
+        Returns:
+            torch.Tensor: Sentence embeddings.
+        """
+        token_embeddings = model_output[0] # First element of model_output contains all token embeddings
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
 
-    def get_embedding_st(self, text):
-        """Generates embedding for a single text using the Sentence Transformer model."""
-        encoded_input = self.tokenizer_st(text, padding=True, truncation=True, return_tensors='pt').to(DEVICE)
-        with torch.no_grad():
-            model_output = self.model_st(**encoded_input)
-        sentence_embedding = self._mean_pooling(model_output, encoded_input['attention_mask'])
-        return sentence_embedding.cpu().numpy().flatten() 
+    def get_embedding_st(self, text: str) -> np.ndarray:
+        """
+        Generates an embedding for a single text string using the Sentence Transformer model.
 
-    def calculate_semantic_similarity(self, text1, text2):
-        """Calculates cosine similarity between two texts' embeddings. [cite: 243, 244]"""
+        Args:
+            text (str): The input text.
+
+        Returns:
+            np.ndarray: A 1D NumPy array representing the sentence embedding.
+                        Returns a zero vector of `self.embedding_dim` if the text is empty,
+                        invalid, or if embedding generation fails.
+        """
+        if not isinstance(text, str) or not text.strip():
+            # print(f"Warning: get_embedding_st received empty or invalid text. Returning zero vector.")
+            return np.zeros(self.embedding_dim, dtype=np.float32)
+        try:
+            encoded_input = self.tokenizer_st(text, padding=True, truncation=True, return_tensors='pt').to(DEVICE)
+            with torch.no_grad():
+                model_output = self.model_st(**encoded_input)
+            sentence_embedding = self._mean_pooling(model_output, encoded_input['attention_mask'])
+            return sentence_embedding.cpu().numpy().flatten()
+        except Exception as e:
+            print(f"Error generating sentence embedding for text '{text[:50]}...': {e}")
+            return np.zeros(self.embedding_dim, dtype=np.float32)
+
+
+    def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculates cosine similarity between the Sentence Transformer embeddings of two texts.
+
+        Args:
+            text1 (str): The first text string.
+            text2 (str): The second text string.
+
+        Returns:
+            float: The cosine similarity score (between -1.0 and 1.0).
+                   Returns 0.0 if embeddings cannot be generated or are zero vectors.
+        """
         embedding1 = self.get_embedding_st(text1)
         embedding2 = self.get_embedding_st(text2)
-        # Normalize embeddings to unit vectors for cosine similarity
-        embedding1 = embedding1 / np.linalg.norm(embedding1)
-        embedding2 = embedding2 / np.linalg.norm(embedding2)
-        return np.dot(embedding1, embedding2)
 
-    def select_best_answer(self, question, multiple_choice_options, candidate_answers):
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+
+        if norm1 == 0 or norm2 == 0:
+            # This handles cases where one or both texts resulted in a zero embedding (e.g., empty text)
+            return 0.0
+
+        # Normalize embeddings to unit vectors for cosine similarity
+        embedding1_normalized = embedding1 / norm1
+        embedding2_normalized = embedding2 / norm2
+
+        similarity = np.dot(embedding1_normalized, embedding2_normalized)
+        return float(similarity) # Ensure float type
+
+    def select_best_answer(self, question: str, multiple_choice_options: list[str], candidate_answers: list[dict]) -> int:
         """
         Selects the best answer option from multiple-choice based on extracted candidates. [cite: 237]
 
@@ -47,39 +115,75 @@ class AnswerSelector:
         Returns:
             int: The index (0-3) of the selected best answer option.
         """
+        # Basic input validation
+        if not isinstance(multiple_choice_options, list) or not multiple_choice_options:
+            print("Warning: select_best_answer received empty or invalid multiple_choice_options. Defaulting to option index 0.")
+            return 0
+        if not all(isinstance(opt, str) for opt in multiple_choice_options):
+            print("Warning: select_best_answer received multiple_choice_options with non-string elements. Proceeding cautiously.")
+            # Convert to string to be safe, or could error out
+            multiple_choice_options = [str(opt) for opt in multiple_choice_options]
+
+
+        if not isinstance(candidate_answers, list):
+            print("Warning: select_best_answer received non-list candidate_answers. Defaulting to option index 0.")
+            return 0
+
         option_scores = [0.0] * len(multiple_choice_options)
         
         # Consider each extracted candidate answer
         for cand_ans in candidate_answers:
-            extracted_text = cand_ans['answer']
-            qa_score = cand_ans['score'] # Confidence score from the QA model [cite: 245]
+            if not isinstance(cand_ans, dict) or 'answer' not in cand_ans or 'score' not in cand_ans:
+                print(f"Warning: Skipping invalid candidate answer data: {cand_ans}")
+                continue
 
-            for i, option_text in enumerate(multiple_choice_options):
-                # 1. Exact Matching (highest priority) [cite: 241]
+            extracted_text = cand_ans.get('answer', "")
+            qa_score = cand_ans.get('score', 0.0)
+
+            if not isinstance(extracted_text, str) or not extracted_text.strip():
+                continue # Skip candidate answers with no text
+
+            if not isinstance(qa_score, (float, int)):
+                try:
+                    qa_score = float(qa_score)
+                except (ValueError, TypeError):
+                    print(f"Warning: Could not convert qa_score '{qa_score}' to float. Using 0.0.")
+                    qa_score = 0.0
+
+
+            for i, option_text_orig in enumerate(multiple_choice_options):
+                option_text = str(option_text_orig) # Ensure option_text is a string for processing
+
+                # 1. Exact Matching (highest priority)
                 if extracted_text.lower() == option_text.lower():
                     option_scores[i] += qa_score * 2.0 # Boost exact matches
-                    print(f"  Exact match found: '{extracted_text}' for option '{option_text}'")
-                    continue # Move to next option for this candidate answer
+                    # print(f"  Exact match found: '{extracted_text}' for option '{option_text}'")
+                    continue # Process this candidate against other options if needed, or assume one best match per candidate?
+                             # Current logic: one candidate can contribute to multiple options if it matches multiple.
 
-                # 2. Fuzzy Matching [cite: 242]
+                # 2. Fuzzy Matching
                 fuzzy_ratio = fuzz.ratio(extracted_text.lower(), option_text.lower()) / 100.0
                 if fuzzy_ratio > 0.8: # Threshold for fuzzy match
                     option_scores[i] += qa_score * (1.0 + fuzzy_ratio) # Boost based on fuzzy match quality
-                    print(f"  Fuzzy match found: '{extracted_text}' with '{option_text}' (Ratio: {fuzzy_ratio:.2f})")
+                    # print(f"  Fuzzy match found: '{extracted_text}' with '{option_text}' (Ratio: {fuzzy_ratio:.2f})")
                     continue
 
-                # 3. Semantic Similarity (if fuzzy/exact not strong enough) [cite: 243, 244]
+                # 3. Semantic Similarity (if fuzzy/exact not strong enough)
+                # This is called even if fuzzy match was found above 0.8; consider if this is desired.
+                # For now, if an exact or strong fuzzy match occurs, we continue, so semantic sim is only for weaker/no fuzzy.
+                # The prompt implies to use this if "fuzzy/exact not strong enough".
+                # The current `continue` statements mean semantic similarity is only computed if exact/fuzzy criteria are not met.
                 semantic_sim = self.calculate_semantic_similarity(extracted_text, option_text)
                 if semantic_sim > 0.5: # Threshold for semantic similarity
                     option_scores[i] += qa_score * (0.5 + semantic_sim) # Smaller boost than exact/fuzzy
-                    print(f"  Semantic match found: '{extracted_text}' with '{option_text}' (Sim: {semantic_sim:.2f})")
+                    # print(f"  Semantic match found: '{extracted_text}' with '{option_text}' (Sim: {semantic_sim:.2f})")
         
-        # Find the index of the option with the highest aggregated score [cite: 247]
-        if not option_scores or max(option_scores) == 0:
-            print("No strong match found. Defaulting to first option (index 0).")
+        # Find the index of the option with the highest aggregated score
+        if not option_scores or max(option_scores) <= 0: # Changed to <= 0 to handle cases where all scores are zero or negative (though unlikely with current logic)
+            print(f"No strong match found for question '{question[:50]}...'. Option scores: {option_scores}. Defaulting to first option (index 0).")
             return 0 # Fallback if no options score highly or no candidates
         
-        best_option_index = np.argmax(option_scores)
+        best_option_index = int(np.argmax(option_scores)) # Ensure int
         print(f"Option scores: {option_scores}")
         print(f"Selected option index: {best_option_index} ('{multiple_choice_options[best_option_index]}')")
         return best_option_index

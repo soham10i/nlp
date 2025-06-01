@@ -2,15 +2,34 @@ from datasets import load_dataset
 import os
 import json
 from config import MEDQA_DATASET_NAME
+from datasets import Dataset # For type hinting
 
-def load_medqa_dataset(split="train"):
+def load_medqa_dataset(split: str = "train") -> Dataset | None:
     """
-    Loads the MedQA-USMLE-4-options dataset from Hugging Face. [cite: 130]
+    Loads a specified split of the MedQA-USMLE-4-options dataset from Hugging Face.
+
+    Args:
+        split (str, optional): The dataset split to load (e.g., "train", "test",
+                               "validation"). Defaults to "train".
+
+    Returns:
+        datasets.Dataset | None: The loaded Hugging Face Dataset object, or None
+                                 if loading fails.
     """
     print(f"Loading MedQA dataset (split: {split})...")
-    dataset = load_dataset(MEDQA_DATASET_NAME, split=split) 
-    print(f"Dataset loaded. Number of examples: {len(dataset)}")
-    return dataset
+    try:
+        dataset = load_dataset(MEDQA_DATASET_NAME, name="US", split=split) # Added name="US" as per HF dataset viewer for this dataset
+        print(f"Dataset '{MEDQA_DATASET_NAME}' (split: {split}) loaded successfully. Number of examples: {len(dataset)}")
+        return dataset
+    except FileNotFoundError:
+        print(f"Error: Dataset {MEDQA_DATASET_NAME} not found. It might be a configuration issue or the dataset was removed from Hugging Face Hub.")
+        return None
+    except ConnectionError:
+        print(f"Error: Could not connect to Hugging Face Hub to download dataset {MEDQA_DATASET_NAME}. Please check your internet connection.")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred while loading dataset {MEDQA_DATASET_NAME} (split: {split}): {e}")
+        return None
 
 # No load_wikipedia_data() function here anymore, as it's fetched on demand.
 

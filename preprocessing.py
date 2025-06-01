@@ -35,42 +35,123 @@ except OSError:
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
 
-def clean_text(text):
-    """Removes punctuation, numbers, and converts to lowercase."""
+def clean_text(text: str) -> str:
+    """
+    Cleans text by converting to lowercase and removing punctuation and numbers.
+
+    Args:
+        text (str): The input string.
+
+    Returns:
+        str: The cleaned string, containing only lowercase letters and spaces.
+    """
+    if not isinstance(text, str):
+        # Or raise TypeError, but for this project, returning empty string might be safer if called in a pipeline
+        print(f"Warning: clean_text received non-string input: {type(text)}. Returning empty string.")
+        return ""
     text = text.lower()
     text = re.sub(r'[^a-z\s]', '', text) # Keep only letters and spaces
     return text
 
-def tokenize_text(text):
-    """Tokenizes text into words."""
+def tokenize_text(text: str) -> list[str]:
+    """
+    Tokenizes text into words using NLTK.
+
+    Args:
+        text (str): The input string.
+
+    Returns:
+        list[str]: A list of word tokens.
+    """
+    if not isinstance(text, str):
+        print(f"Warning: tokenize_text received non-string input: {type(text)}. Returning empty list.")
+        return []
     return nltk.word_tokenize(text)
 
-def remove_stopwords(tokens):
-    """Removes common stopwords from a list of tokens."""
+def remove_stopwords(tokens: list[str]) -> list[str]:
+    """
+    Removes common English stopwords from a list of tokens.
+
+    Args:
+        tokens (list[str]): A list of word tokens.
+
+    Returns:
+        list[str]: A list of tokens with stopwords removed.
+    """
+    if not isinstance(tokens, list):
+        print(f"Warning: remove_stopwords received non-list input: {type(tokens)}. Returning empty list.")
+        return []
     return [word for word in tokens if word not in stop_words]
 
-def lemmatize_tokens(tokens):
-    """Lemmatizes tokens to their base form."""
+def lemmatize_tokens(tokens: list[str]) -> list[str]:
+    """
+    Lemmatizes tokens to their base form using WordNetLemmatizer.
+
+    Args:
+        tokens (list[str]): A list of word tokens.
+
+    Returns:
+        list[str]: A list of lemmatized tokens.
+    """
+    if not isinstance(tokens, list):
+        print(f"Warning: lemmatize_tokens received non-list input: {type(tokens)}. Returning empty list.")
+        return []
     return [lemmatizer.lemmatize(word) for word in tokens]
 
-def preprocess_text(text, perform_lemmatization=True):
+def preprocess_text(text: str, perform_lemmatization: bool = True) -> str:
     """
-    Applies a full preprocessing pipeline.
+    Applies a full preprocessing pipeline to the input text.
+
+    The pipeline consists of:
+    1. Cleaning (lowercase, remove punctuation/numbers).
+    2. Tokenization.
+    3. Stopword removal.
+    4. Lemmatization (optional).
+
+    Args:
+        text (str): The input string.
+        perform_lemmatization (bool, optional): Whether to perform lemmatization.
+                                                 Defaults to True.
+
+    Returns:
+        str: The preprocessed text as a single string with tokens joined by spaces.
+             Returns an empty string if input is not a string.
     """
-    text = clean_text(text)
-    tokens = tokenize_text(text)
+    if not isinstance(text, str):
+        print(f"Warning: preprocess_text received non-string input: {type(text)}. Returning empty string.")
+        return ""
+
+    cleaned_text = clean_text(text)
+    tokens = tokenize_text(cleaned_text)
     tokens = remove_stopwords(tokens)
     if perform_lemmatization:
         tokens = lemmatize_tokens(tokens)
     return " ".join(tokens)
 
-def extract_medical_entities_spacy(text):
+def extract_medical_entities_spacy(text: str) -> list[tuple[str, str]]:
     """
-    Extracts named entities from text using spaCy. [cite: 140]
-    This function is crucial for identifying keywords for Wikipedia searches. [cite: 186]
+    Extracts named entities from text using the loaded spaCy model.
+
+    Identifies entities like diseases, drugs, anatomical parts, etc.
+    This function is crucial for identifying keywords for Wikipedia searches.
+
+    Args:
+        text (str): The input string.
+
+    Returns:
+        list[tuple[str, str]]: A list of tuples, where each tuple contains
+                                the entity text and its label (e.g., ("diabetes", "DISEASE")).
+                                Returns an empty list if input is not a string or if an error occurs.
     """
-    doc = nlp(text)
-    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    if not isinstance(text, str):
+        print(f"Warning: extract_medical_entities_spacy received non-string input: {type(text)}. Returning empty list.")
+        return []
+    try:
+        doc = nlp(text)
+        entities = [(ent.text, ent.label_) for ent in doc.ents]
+    except Exception as e:
+        print(f"Error during spaCy entity extraction for text snippet '{text[:50]}...': {e}")
+        return []
     return entities
 
 if __name__ == "__main__":
